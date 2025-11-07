@@ -291,8 +291,21 @@ app.post('/api/auth/email/send-email', async (req, res) => {
   try {
     const { email } = req.body;
 
+    console.log('📧 Email send request for:', email);
+
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    // Check if Gmail credentials are configured
+    if (!gmailEmail || !gmailPassword) {
+      console.error('❌ Gmail credentials not configured');
+      console.error('Email configured:', !!gmailEmail);
+      console.error('Password configured:', !!gmailPassword);
+      return res.status(500).json({
+        success: false,
+        message: 'Email service not configured. Please contact support.'
+      });
     }
 
     // Generate a random 6-digit OTP
@@ -301,6 +314,8 @@ app.post('/api/auth/email/send-email', async (req, res) => {
     // Set OTP expiration to 10 minutes
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+    console.log('🔐 Generated OTP:', otp, 'for email:', email);
+
     // Save OTP to database (upsert)
     await EmailOtp.findOneAndUpdate(
       { email },
@@ -308,10 +323,13 @@ app.post('/api/auth/email/send-email', async (req, res) => {
       { upsert: true }
     );
 
+    console.log('💾 OTP saved to database');
+
     // Send email with OTP
     try {
-      await transporter.sendMail({
-        from: process.env.GMAIL_EMAIL,
+      console.log('📨 Attempting to send email...');
+      const mailOptions = {
+        from: gmailEmail,
         to: email,
         subject: 'Your OTP for Login - Tathagat Academy',
         html: `
@@ -333,12 +351,21 @@ app.post('/api/auth/email/send-email', async (req, res) => {
             </div>
           </div>
         `
+      };
+
+      console.log('📋 Mail options prepared:', {
+        from: mailOptions.from,
+        to: mailOptions.to,
+        subject: mailOptions.subject
       });
-      console.log(`✅ Email sent successfully to ${email} with OTP: ${otp}`);
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent successfully to ${email} with response:`, info.response);
     } catch (emailError) {
-      console.error('Error sending email:', emailError.message);
-      // Still return success with OTP so user can continue (for demo purposes)
-      console.log(`⚠️ Email send failed but OTP saved: ${otp}`);
+      console.error('❌ Error sending email:', emailError.message);
+      console.error('Email error code:', emailError.code);
+      console.error('Email error response:', emailError.response);
+      console.log(`⚠️ Email send failed but OTP saved to DB: ${otp}`);
     }
 
     res.json({
