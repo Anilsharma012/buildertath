@@ -472,6 +472,149 @@ app.post('/api/auth/email/verify', async (req, res) => {
   }
 });
 
+// ============ User Routes (Student) ============
+
+// Middleware to verify user token
+const userAuth = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ success: false, message: 'No token provided' });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ success: false, message: 'Invalid token' });
+  }
+};
+
+// Verify token and get user details
+app.get('/api/user/verify-token', userAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        city: user.city || '',
+        gender: user.gender || '',
+        dob: user.dob || '',
+        profilePic: user.profilePic || '',
+        role: user.role
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Update user details
+app.post('/api/user/update-details', userAuth, async (req, res) => {
+  try {
+    const { name, email, phoneNumber, city, gender, dob, profilePic } = req.body;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        name,
+        email,
+        phoneNumber,
+        city,
+        gender,
+        dob,
+        profilePic,
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'User details updated successfully',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        phoneNumber: updatedUser.phoneNumber,
+        city: updatedUser.city || '',
+        gender: updatedUser.gender || '',
+        dob: updatedUser.dob || '',
+        profilePic: updatedUser.profilePic || '',
+        role: updatedUser.role
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user details:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Upload profile picture
+app.post('/api/user/upload-profile', userAuth, async (req, res) => {
+  try {
+    if (!req.files || !req.files.profilePic) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const file = req.files.profilePic;
+
+    if (!file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ success: false, message: 'File must be an image' });
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: 'File size must be less than 5MB' });
+    }
+
+    const fileName = `${req.user._id}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+    const uploadPath = `./uploads/${fileName}`;
+
+    file.mv(uploadPath, async (err) => {
+      if (err) {
+        console.error('File upload error:', err);
+        return res.status(500).json({ success: false, message: 'File upload failed' });
+      }
+
+      const imageUrl = `/uploads/${fileName}`;
+
+      const updatedUser = await User.findByIdAndUpdate(
+        req.user._id,
+        { profilePic: imageUrl },
+        { new: true }
+      );
+
+      res.json({
+        success: true,
+        message: 'Profile picture uploaded successfully',
+        url: imageUrl,
+        user: {
+          id: updatedUser._id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          phoneNumber: updatedUser.phoneNumber,
+          city: updatedUser.city || '',
+          gender: updatedUser.gender || '',
+          dob: updatedUser.dob || '',
+          profilePic: updatedUser.profilePic || '',
+          role: updatedUser.role
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Error uploading profile picture:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ============ Admin Routes ============
 
 // Admin Login
