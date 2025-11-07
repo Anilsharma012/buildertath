@@ -346,30 +346,52 @@ app.post('/api/auth/email/verify', async (req, res) => {
     const { email, otpCode } = req.body;
 
     console.log('🔍 Verify attempt - Email:', email, 'OTP:', otpCode, 'OTP length:', otpCode?.length);
+    console.log('📝 Request body keys:', Object.keys(req.body));
+    console.log('📋 Email type:', typeof email, 'OTP type:', typeof otpCode);
 
-    if (!email || !otpCode) {
-      return res.status(400).json({ success: false, message: 'Email and OTP are required' });
+    // Validate inputs
+    if (!email) {
+      console.log('❌ Email is missing or empty');
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    if (!otpCode) {
+      console.log('❌ OTP code is missing or empty');
+      return res.status(400).json({ success: false, message: 'OTP code is required' });
+    }
+
+    if (otpCode.length !== 6) {
+      console.log('❌ OTP code length is invalid:', otpCode.length);
+      return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
     }
 
     // Find the OTP record
     const otpRecord = await EmailOtp.findOne({ email });
 
-    console.log('📋 OTP Record found:', !!otpRecord, 'Stored OTP:', otpRecord?.otp);
+    console.log('📋 OTP Record found:', !!otpRecord);
+    if (otpRecord) {
+      console.log('📋 Stored OTP:', otpRecord.otp, 'Stored Email:', otpRecord.email);
+      console.log('⏰ Expires at:', otpRecord.expiresAt, 'Current time:', new Date());
+    }
 
     if (!otpRecord) {
+      console.log('❌ No OTP record found for email:', email);
       return res.status(400).json({ success: false, message: 'OTP not found. Please request a new OTP.' });
     }
 
     // Check if OTP has expired
     if (new Date() > otpRecord.expiresAt) {
       await EmailOtp.deleteOne({ email });
-      console.log('⏰ OTP expired');
+      console.log('⏰ OTP expired for email:', email);
       return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
     }
 
-    // Verify OTP
-    console.log('🔐 Comparing OTPs - Stored:', otpRecord.otp, 'Received:', otpCode);
-    if (otpRecord.otp !== otpCode) {
+    // Verify OTP - trim both for safety
+    const storedOtp = otpRecord.otp.toString().trim();
+    const receivedOtp = otpCode.toString().trim();
+
+    console.log('🔐 Comparing OTPs - Stored:', `'${storedOtp}'`, 'Received:', `'${receivedOtp}'`);
+    if (storedOtp !== receivedOtp) {
       console.log('❌ OTP mismatch');
       return res.status(400).json({ success: false, message: 'Invalid OTP. Please try again.' });
     }
