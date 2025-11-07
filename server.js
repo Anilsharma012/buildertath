@@ -44,6 +44,8 @@ const transporter = nodemailer.createTransport({
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
+app.use(fileUpload({ limits: { fileSize: 5 * 1024 * 1024 } }));
+app.use('/uploads', express.static('uploads'));
 
 // MongoDB Connection
 const mongoUri = process.env.MONGO_URI || 'mongodb+srv://tathagat:Tathagat123@cluster0.8adckmm.mongodb.net/';
