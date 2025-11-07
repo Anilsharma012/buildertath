@@ -12,12 +12,23 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Email transporter configuration
+const gmailEmail = process.env.GMAIL_EMAIL?.trim();
+const gmailPassword = process.env.GMAIL_APP_PASSWORD?.trim();
+
+console.log('📧 Email Configuration:', {
+  email: gmailEmail ? '***' + gmailEmail.slice(-10) : 'NOT SET',
+  hasPassword: !!gmailPassword,
+  passwordLength: gmailPassword?.length || 0
+});
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.GMAIL_EMAIL,
-    pass: process.env.GMAIL_APP_PASSWORD
-  }
+    user: gmailEmail,
+    pass: gmailPassword
+  },
+  logger: true,
+  debug: true
 });
 
 // Middleware
@@ -280,8 +291,21 @@ app.post('/api/auth/email/send-email', async (req, res) => {
   try {
     const { email } = req.body;
 
+    console.log('📧 Email send request for:', email);
+
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    // Check if Gmail credentials are configured
+    if (!gmailEmail || !gmailPassword) {
+      console.error('❌ Gmail credentials not configured');
+      console.error('Email configured:', !!gmailEmail);
+      console.error('Password configured:', !!gmailPassword);
+      return res.status(500).json({
+        success: false,
+        message: 'Email service not configured. Please contact support.'
+      });
     }
 
     // Generate a random 6-digit OTP
@@ -290,6 +314,8 @@ app.post('/api/auth/email/send-email', async (req, res) => {
     // Set OTP expiration to 10 minutes
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+    console.log('🔐 Generated OTP:', otp, 'for email:', email);
+
     // Save OTP to database (upsert)
     await EmailOtp.findOneAndUpdate(
       { email },
@@ -297,10 +323,13 @@ app.post('/api/auth/email/send-email', async (req, res) => {
       { upsert: true }
     );
 
+    console.log('💾 OTP saved to database');
+
     // Send email with OTP
     try {
-      await transporter.sendMail({
-        from: process.env.GMAIL_EMAIL,
+      console.log('📨 Attempting to send email...');
+      const mailOptions = {
+        from: gmailEmail,
         to: email,
         subject: 'Your OTP for Login - Tathagat Academy',
         html: `
@@ -322,12 +351,21 @@ app.post('/api/auth/email/send-email', async (req, res) => {
             </div>
           </div>
         `
+      };
+
+      console.log('📋 Mail options prepared:', {
+        from: mailOptions.from,
+        to: mailOptions.to,
+        subject: mailOptions.subject
       });
-      console.log(`✅ Email sent successfully to ${email} with OTP: ${otp}`);
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent successfully to ${email} with response:`, info.response);
     } catch (emailError) {
-      console.error('Error sending email:', emailError.message);
-      // Still return success with OTP so user can continue (for demo purposes)
-      console.log(`⚠️ Email send failed but OTP saved: ${otp}`);
+      console.error('❌ Error sending email:', emailError.message);
+      console.error('Email error code:', emailError.code);
+      console.error('Email error response:', emailError.response);
+      console.log(`⚠️ Email send failed but OTP saved to DB: ${otp}`);
     }
 
     res.json({
@@ -346,30 +384,52 @@ app.post('/api/auth/email/verify', async (req, res) => {
     const { email, otpCode } = req.body;
 
     console.log('🔍 Verify attempt - Email:', email, 'OTP:', otpCode, 'OTP length:', otpCode?.length);
+    console.log('📝 Request body keys:', Object.keys(req.body));
+    console.log('📋 Email type:', typeof email, 'OTP type:', typeof otpCode);
 
-    if (!email || !otpCode) {
-      return res.status(400).json({ success: false, message: 'Email and OTP are required' });
+    // Validate inputs
+    if (!email) {
+      console.log('❌ Email is missing or empty');
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    if (!otpCode) {
+      console.log('❌ OTP code is missing or empty');
+      return res.status(400).json({ success: false, message: 'OTP code is required' });
+    }
+
+    if (otpCode.length !== 6) {
+      console.log('❌ OTP code length is invalid:', otpCode.length);
+      return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
     }
 
     // Find the OTP record
     const otpRecord = await EmailOtp.findOne({ email });
 
-    console.log('📋 OTP Record found:', !!otpRecord, 'Stored OTP:', otpRecord?.otp);
+    console.log('📋 OTP Record found:', !!otpRecord);
+    if (otpRecord) {
+      console.log('📋 Stored OTP:', otpRecord.otp, 'Stored Email:', otpRecord.email);
+      console.log('⏰ Expires at:', otpRecord.expiresAt, 'Current time:', new Date());
+    }
 
     if (!otpRecord) {
+      console.log('❌ No OTP record found for email:', email);
       return res.status(400).json({ success: false, message: 'OTP not found. Please request a new OTP.' });
     }
 
     // Check if OTP has expired
     if (new Date() > otpRecord.expiresAt) {
       await EmailOtp.deleteOne({ email });
-      console.log('⏰ OTP expired');
+      console.log('⏰ OTP expired for email:', email);
       return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
     }
 
-    // Verify OTP
-    console.log('🔐 Comparing OTPs - Stored:', otpRecord.otp, 'Received:', otpCode);
-    if (otpRecord.otp !== otpCode) {
+    // Verify OTP - trim both for safety
+    const storedOtp = otpRecord.otp.toString().trim();
+    const receivedOtp = otpCode.toString().trim();
+
+    console.log('🔐 Comparing OTPs - Stored:', `'${storedOtp}'`, 'Received:', `'${receivedOtp}'`);
+    if (storedOtp !== receivedOtp) {
       console.log('❌ OTP mismatch');
       return res.status(400).json({ success: false, message: 'Invalid OTP. Please try again.' });
     }

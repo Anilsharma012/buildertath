@@ -103,22 +103,44 @@ const Login = ({ onClose, setUser }) => {
   };
 
   const sendOtpEmail = async () => {
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setOtpError("❌ Please enter a valid email address.");
+      setTimeout(() => setOtpError(""), 4000);
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setOtpError("❌ Please enter a valid email address.");
+      setTimeout(() => setOtpError(""), 4000);
+      return;
+    }
+
     try {
-      await axios.post("/api/auth/email/send-email", {
-        email,
+      const response = await axios.post("/api/auth/email/send-email", {
+        email: trimmedEmail,
       });
+
+      console.log('📧 OTP sent successfully:', response.data);
+      setEmail(trimmedEmail);
       setStep("verify_email");
 
       //     Show success toast
-      setToastMessage("📩 OTP sent successfully!");
+      setToastMessage("📩 OTP sent successfully! Check your email.");
       setTimeout(() => setToastMessage(""), 3000);
     } catch (err) {
       console.error("Error sending email OTP", err);
+      console.error("Error response data:", err?.response?.data);
       const status = err?.response?.status;
+      const errorMsg = err?.response?.data?.message || err?.message;
+
       if (status === 404) {
         setOtpError('Server endpoint not found (404). Ensure the backend API is reachable and API base is configured.');
       } else if (err?.message && err.message.includes('Network')) {
         setOtpError('Network error while sending OTP. Check your connection or backend availability.');
+      } else if (status === 400) {
+        setOtpError(`❌ ${errorMsg || 'Failed to send OTP. Try again.'}`);
       } else {
         setOtpError("Failed to send OTP. Try again.");
       }
@@ -128,11 +150,33 @@ const Login = ({ onClose, setUser }) => {
 
   const verifyOtpEmail = async () => {
     const otpCode = emailOtp.join("");
+    const trimmedEmail = email.trim();
+
+    console.log('🔍 OTP Verification Debug:', {
+      email: trimmedEmail,
+      otpCode,
+      otpCodeLength: otpCode.length,
+      emailEmpty: !trimmedEmail,
+      otpEmpty: !otpCode,
+      emailOtpArray: emailOtp
+    });
+
+    if (!trimmedEmail) {
+      setOtpError("❌ Email is empty. Please go back and enter your email.");
+      setTimeout(() => setOtpError(""), 4000);
+      return;
+    }
+
+    if (!otpCode || otpCode.length !== 6) {
+      setOtpError("❌ Please enter all 6 digits of the OTP.");
+      setTimeout(() => setOtpError(""), 4000);
+      return;
+    }
 
     try {
       const response = await axios.post(
         "/api/auth/email/verify",
-        { email, otpCode }
+        { email: trimmedEmail, otpCode }
       );
 
       // ✅ Save token and user
@@ -151,11 +195,16 @@ const Login = ({ onClose, setUser }) => {
       }, 2000);
     } catch (err) {
       console.error('verifyOtpEmail error', err);
+      console.error('Error response data:', err?.response?.data);
       const status = err?.response?.status;
+      const errorMsg = err?.response?.data?.message || err?.message;
+
       if (status === 404) {
         setOtpError('Server endpoint not found (404). Ensure the backend API is reachable and API base is configured.');
       } else if (err?.message && err.message.includes('Network')) {
         setOtpError('Network error while verifying OTP. Check your connection or backend availability.');
+      } else if (status === 400) {
+        setOtpError(`❌ ${errorMsg || 'Invalid OTP. Please try again.'}`);
       } else {
         setOtpError("❌ Invalid OTP. Please try again.");
       }
