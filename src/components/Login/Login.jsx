@@ -195,20 +195,26 @@ const Login = ({ onClose, setUser }) => {
       }, 2000);
     } catch (err) {
       console.error('verifyOtpEmail error', err);
+      console.error('Error response:', err?.response);
       console.error('Error response data:', err?.response?.data);
       const status = err?.response?.status;
-      const errorMsg = err?.response?.data?.message || err?.message;
+      const errorMsg = err?.response?.data?.message || err?.message || 'Unknown error';
+
+      console.log('Error Status:', status);
+      console.log('Error Message:', errorMsg);
 
       if (status === 404) {
         setOtpError('Server endpoint not found (404). Ensure the backend API is reachable and API base is configured.');
       } else if (err?.message && err.message.includes('Network')) {
         setOtpError('Network error while verifying OTP. Check your connection or backend availability.');
       } else if (status === 400) {
-        setOtpError(`❌ ${errorMsg || 'Invalid OTP. Please try again.'}`);
+        setOtpError(`❌ ${errorMsg}`);
+      } else if (status === 500) {
+        setOtpError('❌ Server error. Please try again later.');
       } else {
-        setOtpError("❌ Invalid OTP. Please try again.");
+        setOtpError(`❌ ${errorMsg}`);
       }
-      setTimeout(() => setOtpError(""), 4000);
+      setTimeout(() => setOtpError(""), 5000);
     }
   };
 
