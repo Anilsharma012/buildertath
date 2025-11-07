@@ -12,12 +12,23 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Email transporter configuration
+const gmailEmail = process.env.GMAIL_EMAIL?.trim();
+const gmailPassword = process.env.GMAIL_APP_PASSWORD?.trim();
+
+console.log('📧 Email Configuration:', {
+  email: gmailEmail ? '***' + gmailEmail.slice(-10) : 'NOT SET',
+  hasPassword: !!gmailPassword,
+  passwordLength: gmailPassword?.length || 0
+});
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.GMAIL_EMAIL,
-    pass: process.env.GMAIL_APP_PASSWORD
-  }
+    user: gmailEmail,
+    pass: gmailPassword
+  },
+  logger: true,
+  debug: true
 });
 
 // Middleware
